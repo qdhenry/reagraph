@@ -12,7 +12,10 @@
     "start": "storybook dev -p 9009",
     "build-storybook": "storybook build",
     "prepare": "husky install",
-    "chromatic": "npx chromatic --project-token=a7098a56897c --auto-accept-changes"
+    "chromatic": "npx chromatic --project-token=a7098a56897c --auto-accept-changes",
+    "dev:experiments": "vite --config vite.experiments.config.ts",
+    "build:experiments": "vite build --config vite.experiments.config.ts",
+    "preview:experiments": "vite preview --config vite.experiments.config.ts"
   },
   "type": "module",
   "types": "dist/index.d.ts",
@@ -51,6 +54,7 @@
   },
   "homepage": "https://github.com/reaviz/reagraph#readme",
   "dependencies": {
+    "@cosmos.gl/graph": "^2.2.1",
     "@react-spring/three": "10.0.1",
     "@react-three/drei": "^10.0.7",
     "@react-three/fiber": "9.0.4",
@@ -70,6 +74,7 @@
     "graphology-metrics": "^2.1.0",
     "graphology-shortest-path": "^2.0.2",
     "hold-event": "^0.2.0",
+    "react-router-dom": "^7.6.2",
     "three": "^0.176.0",
     "three-stdlib": "^2.36.0",
     "zustand": "5.0.5"
@@ -110,6 +115,7 @@
     "husky": "^9.0.11",
     "jsdom": "^24.0.0",
     "lint-staged": "^15.2.2",
+    "playwright": "^1.53.0",
     "postcss-nested": "^6.0.1",
     "postcss-preset-env": "^9.4.0",
     "prettier": "^3.2.5",

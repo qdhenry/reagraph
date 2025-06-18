@@ -379,6 +379,7 @@ export const useSelection = ({
   const onNodePointerOver = useCallback(
     (data: GraphNode) => {
       if (pathHoverType) {
+        console.log('onNodePointerOver', data);
         const graph = ref.current.getGraph();
         if (!graph) {
           throw new Error('No ref found for the graph canvas.');

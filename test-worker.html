@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Worker Setup</title>
+</head>
+<body>
+    <h1>Testing Worker Setup</h1>
+    <div id="status">Checking worker setup...</div>
+    <div id="console-output" style="background: #f0f0f0; padding: 10px; margin-top: 20px; font-family: monospace; white-space: pre-wrap;"></div>
+    
+    <script type="module">
+        const output = document.getElementById('console-output');
+        const status = document.getElementById('status');
+        
+        function log(message, type = 'log') {
+            const timestamp = new Date().toISOString();
+            const color = type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'black';
+            output.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            console[type](message);
+        }
+        
+        try {
+            // Test 1: Check if Worker is available
+            if (typeof Worker !== 'undefined') {
+                log('✓ Worker API is available');
+            } else {
+                log('✗ Worker API is NOT available', 'error');
+            }
+            
+            // Test 2: Try to create a simple inline worker
+            const blob = new Blob(['self.postMessage("Hello from worker");'], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            const testWorker = new Worker(workerUrl);
+            
+            testWorker.onmessage = (e) => {
+                log('✓ Inline worker test passed: ' + e.data);
+                testWorker.terminate();
+                URL.revokeObjectURL(workerUrl);
+            };
+            
+            testWorker.onerror = (e) => {
+                log('✗ Inline worker error: ' + e.message, 'error');
+            };
+            
+            // Test 3: Check module worker support
+            try {
+                const moduleWorker = new Worker('data:text/javascript,self.postMessage("module");', { type: 'module' });
+                moduleWorker.onmessage = () => {
+                    log('✓ Module workers are supported');
+                    moduleWorker.terminate();
+                };
+                moduleWorker.onerror = () => {
+                    log('⚠ Module workers may not be fully supported', 'warn');
+                };
+            } catch (e) {
+                log('⚠ Module worker test failed: ' + e.message, 'warn');
+            }
+            
+            // Test 4: Check the actual worker file URL
+            const workerPath = new URL('./src/experiments/graph-optimization/workers/layout.worker.ts', window.location.origin);
+            log('Worker URL would be: ' + workerPath.href);
+            
+            // Test 5: Try to fetch the worker file
+            fetch(workerPath)
+                .then(response => {
+                    if (response.ok) {
+                        log('✓ Worker file is accessible');
+                    } else {
+                        log('✗ Worker file returned status: ' + response.status, 'error');
+                    }
+                })
+                .catch(error => {
+                    log('✗ Cannot fetch worker file: ' + error.message, 'error');
+                });
+            
+            status.textContent = 'Worker tests completed. Check console output below.';
+            
+        } catch (error) {
+            log('Fatal error: ' + error.message, 'error');
+            status.textContent = 'Tests failed with error.';
+        }
+        
+        // Also monitor main console for errors
+        window.addEventListener('error', (e) => {
+            log('Window error: ' + e.message + ' at ' + e.filename + ':' + e.lineno, 'error');
+        });
+    </script>
+</body>
+</html>
