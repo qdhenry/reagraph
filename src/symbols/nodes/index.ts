@@ -3,3 +3,5 @@ export * from './Sphere';
 export * from './SphereWithIcon';
 export * from './Svg';
 export * from './SphereWithSvg';
+export * from './InstancedNodes';
+export * from './Nodes';

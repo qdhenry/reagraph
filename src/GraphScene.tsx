@@ -33,6 +33,7 @@ import { Cluster } from './symbols/Cluster';
 import { Edge } from './symbols/Edge';
 import { Edges } from './symbols/edges';
 import { Node } from './symbols';
+import { Nodes } from './symbols/nodes';
 import { useCenterGraph } from './CameraControls/useCenterGraph';
 import { LabelVisibilityType } from './utils/visibility';
 import { useStore } from './store';
@@ -271,6 +272,24 @@ export interface GraphSceneProps {
     cluster: ClusterEventArgs,
     event: ThreeEvent<PointerEvent>
   ) => void;
+
+  /**
+   * Force the use of instanced rendering regardless of node count.
+   * When undefined, auto-switches at 100+ nodes threshold.
+   */
+  useInstancedNodes?: boolean;
+
+  /**
+   * Threshold for auto-switching to instanced rendering.
+   * Default: 100 nodes.
+   */
+  instancedThreshold?: number;
+
+  /**
+   * Whether to enable instanced rendering at all.
+   * Default: true.
+   */
+  enableInstancing?: boolean;
 }
 
 export interface GraphSceneRef {
@@ -345,6 +364,9 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
         labelFontUrl,
         renderNode,
         onRenderCluster,
+        useInstancedNodes,
+        instancedThreshold,
+        enableInstancing,
         ...rest
       },
       ref
@@ -407,34 +429,36 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
       );
 
       const nodeComponents = useMemo(
-        () =>
-          nodes.map(n => (
-            <Node
-              key={n?.id}
-              id={n?.id}
-              labelFontUrl={labelFontUrl}
-              draggable={draggable}
-              constrainDragging={constrainDragging}
-              disabled={disabled}
-              animated={animated}
-              contextMenu={contextMenu}
-              renderNode={renderNode}
-              onClick={onNodeClick}
-              onDoubleClick={onNodeDoubleClick}
-              onContextMenu={onNodeContextMenu}
-              onPointerOver={onNodePointerOver}
-              onPointerOut={onNodePointerOut}
-              onDragged={onNodeDraggedHandler}
-            />
-          )),
+        () => (
+          <Nodes
+            useInstancedNodes={useInstancedNodes}
+            instancedThreshold={instancedThreshold}
+            enableInstancing={enableInstancing}
+            labelFontUrl={labelFontUrl}
+            draggable={draggable}
+            constrainDragging={constrainDragging}
+            disabled={disabled}
+            animated={animated}
+            contextMenu={contextMenu}
+            renderNode={renderNode}
+            onClick={onNodeClick}
+            onDoubleClick={onNodeDoubleClick}
+            onContextMenu={onNodeContextMenu}
+            onPointerOver={onNodePointerOver}
+            onPointerOut={onNodePointerOut}
+            onDragged={onNodeDraggedHandler}
+          />
+        ),
         [
+          useInstancedNodes,
+          instancedThreshold,
+          enableInstancing,
           constrainDragging,
           animated,
           contextMenu,
           disabled,
           draggable,
           labelFontUrl,
-          nodes,
           onNodeClick,
           onNodeContextMenu,
           onNodeDoubleClick,
