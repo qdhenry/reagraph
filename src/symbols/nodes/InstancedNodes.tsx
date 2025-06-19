@@ -8,16 +8,7 @@ import React, {
 } from 'react';
 import { a } from '@react-spring/three';
 import { Instances, Instance, useCursor } from '@react-three/drei';
-import {
-  DoubleSide,
-  Color,
-  Matrix4,
-  Vector3,
-  Raycaster,
-  Object3D,
-  ColorRepresentation
-} from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { DoubleSide, Color, ColorRepresentation } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 
 import { useStore } from '../../store';
@@ -115,6 +106,162 @@ interface NodeInstanceGroup {
   highlighted: boolean;
 }
 
+interface DraggableInstanceProps {
+  node: InternalGraphNode;
+  position: [number, number, number];
+  size: number;
+  draggable: boolean;
+  disabled: boolean;
+  constrainDragging: boolean;
+  clusters: Map<string, any>;
+  draggedNodeId: string | null;
+  setDraggedNodeId: (id: string | null) => void;
+  onClick?: (
+    node: InternalGraphNode,
+    props?: any,
+    event?: ThreeEvent<MouseEvent>
+  ) => void;
+  onDoubleClick?: (
+    node: InternalGraphNode,
+    event: ThreeEvent<MouseEvent>
+  ) => void;
+  onContextMenu?: (node?: InternalGraphNode, props?: any) => void;
+  onPointerOver?: (
+    node: InternalGraphNode,
+    event: ThreeEvent<PointerEvent>
+  ) => void;
+  onPointerOut?: (
+    node: InternalGraphNode,
+    event: ThreeEvent<PointerEvent>
+  ) => void;
+  onDragged?: (node: InternalGraphNode) => void;
+  setHoveredNodeId: (id: string | null) => void;
+  setNodePosition: (id: string, position: any) => void;
+  addDraggingId: (id: string) => void;
+  removeDraggingId: (id: string) => void;
+}
+
+const DraggableInstance: FC<DraggableInstanceProps> = ({
+  node,
+  position,
+  size,
+  draggable,
+  disabled,
+  constrainDragging,
+  clusters,
+  draggedNodeId,
+  setDraggedNodeId,
+  onClick,
+  onDoubleClick,
+  onContextMenu,
+  onPointerOver,
+  onPointerOut,
+  onDragged,
+  setHoveredNodeId,
+  setNodePosition,
+  addDraggingId,
+  removeDraggingId
+}) => {
+  // Individual event handlers for this specific instance
+  const handleInstanceClick = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onClick) return;
+      event.stopPropagation();
+      onClick(node, undefined, event);
+    },
+    [disabled, onClick, node]
+  );
+
+  const handleInstanceDoubleClick = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onDoubleClick) return;
+      event.stopPropagation();
+      onDoubleClick(node, event);
+    },
+    [disabled, onDoubleClick, node]
+  );
+
+  const handleInstanceContextMenu = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onContextMenu) return;
+      event.stopPropagation();
+      onContextMenu(node);
+    },
+    [disabled, onContextMenu, node]
+  );
+
+  const handleInstancePointerDown = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      if (!draggable || disabled) return;
+      event.stopPropagation();
+      if (!draggedNodeId) {
+        setDraggedNodeId(node.id);
+      }
+    },
+    [draggable, disabled, draggedNodeId, setDraggedNodeId, node.id]
+  );
+
+  const handleInstancePointerOver = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      if (disabled) return;
+      setHoveredNodeId(node.id);
+      onPointerOver?.(node, event);
+    },
+    [disabled, setHoveredNodeId, node, onPointerOver]
+  );
+
+  const handleInstancePointerOut = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      if (disabled) return;
+      setHoveredNodeId(null);
+      onPointerOut?.(node, event);
+    },
+    [disabled, setHoveredNodeId, onPointerOut, node]
+  );
+
+  // Individual drag binding for this specific node
+  const nodeCluster = clusters.get(node.cluster);
+  const isThisNodeDragging = draggedNodeId === node.id;
+
+  const instanceBind = useDrag({
+    draggable: draggable && isThisNodeDragging,
+    position: node.position,
+    bounds: constrainDragging ? nodeCluster?.position : undefined,
+    set: pos => {
+      const updatedPosition = {
+        ...node.position,
+        x: pos.x,
+        y: pos.y,
+        z: pos.z
+      };
+      setNodePosition(node.id, updatedPosition);
+    },
+    onDragStart: () => {
+      addDraggingId(node.id);
+    },
+    onDragEnd: () => {
+      removeDraggingId(node.id);
+      onDragged?.(node);
+      setDraggedNodeId(null);
+    }
+  });
+
+  return (
+    <Instance
+      position={position}
+      scale={[size, size, size]}
+      userData={{ nodeId: node.id, type: 'node' }}
+      onClick={handleInstanceClick}
+      onDoubleClick={handleInstanceDoubleClick}
+      onContextMenu={handleInstanceContextMenu}
+      onPointerDown={handleInstancePointerDown}
+      onPointerOver={handleInstancePointerOver}
+      onPointerOut={handleInstancePointerOut}
+      {...(isThisNodeDragging ? instanceBind() : {})}
+    />
+  );
+};
+
 /**
  * InstancedNodes component using drei's Instances for optimal performance with large graphs.
  * Groups nodes by visual state (active, inactive, selected, dragging) similar to the edge optimization pattern.
@@ -154,14 +301,10 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
   const setNodePosition = useStore(state => state.setNodePosition);
   const setCollapsedNodeIds = useStore(state => state.setCollapsedNodeIds);
 
-  const instancesRef = useRef<any>(null);
   const isDragging = draggingIds.length > 0;
-  const hoveredNodeRef = useRef<string | null>(null);
-  const { raycaster } = useThree();
 
   // Drag state management for instanced nodes
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
   const isDraggingCurrent = draggedNodeId !== null;
 
   // Helper function to get icon URL from iconName
@@ -176,34 +319,30 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
     return iconMap[iconName] || iconMap.default;
   }, []);
 
-  // Track node positions for raycasting
-  const nodePositions = useMemo(() => {
-    const positions = new Map<
-      string,
-      { x: number; y: number; z: number; size: number }
-    >();
-    nodes.forEach(node => {
-      if (node.position) {
-        const size = node.size || 7;
-        positions.set(node.id, {
-          x: node.position.x,
-          y: node.position.y,
-          z: node.position.z,
-          size
-        });
-      }
-    });
-    return positions;
-  }, [nodes]);
-
-  // Group nodes by visual state for efficient rendering
+  // Optimize instance grouping strategy for better performance
   const nodeGroups = useMemo((): NodeInstanceGroup[] => {
     const groups = new Map<string, NodeInstanceGroup>();
 
+    // Pre-compute threat severity colors for reuse
+    const threatColors: Record<string, string> = {
+      critical: '#DC2626',
+      high: '#EA580C',
+      medium: '#D97706',
+      low: '#65A30D'
+    };
+
+    // Pre-compute selection states for performance
+    const activeSet = new Set(actives);
+    const selectionSet = new Set(selections);
+    const draggingSet = new Set(draggingIds);
+
+    // Size binning function to reduce groups (round to nearest 0.5)
+    const binSize = (size: number) => Math.round(size * 2) / 2;
+
     nodes.forEach(node => {
-      const isActive = actives.includes(node.id);
-      const isSelected = selections.includes(node.id);
-      const isDraggingCurrent = draggingIds.includes(node.id);
+      const isActive = activeSet.has(node.id);
+      const isSelected = selectionSet.has(node.id);
+      const isDraggingCurrent = draggingSet.has(node.id);
 
       const shouldHighlight = isActive || isSelected || isDraggingCurrent;
 
@@ -213,34 +352,31 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
           : theme.node.inactiveOpacity
         : theme.node.opacity;
 
-      // Use threat severity color if available, otherwise use theme color
+      // Determine color with threat severity handling
+      let color: ColorRepresentation;
       const threatSeverity = node.data?.severity;
-      let color = shouldHighlight
-        ? theme.node.activeFill
-        : node.fill || theme.node.fill;
 
-      // Override with threat severity colors
-      if (threatSeverity && !shouldHighlight) {
-        const threatColors: Record<string, string> = {
-          critical: '#DC2626',
-          high: '#EA580C',
-          medium: '#D97706',
-          low: '#65A30D'
-        };
-        color = threatColors[threatSeverity] || color;
+      if (shouldHighlight) {
+        color = theme.node.activeFill;
+      } else if (threatSeverity && threatColors[threatSeverity]) {
+        color = threatColors[threatSeverity];
+      } else {
+        color = node.fill || theme.node.fill;
       }
 
-      const size = node.size || 7;
+      // Bin size to reduce number of groups
+      const binnedSize = binSize(node.size || 7);
 
-      // Include threat severity in grouping key for animation purposes
-      const groupKey = `${color}-${selectionOpacity}-${size}-${shouldHighlight}-${threatSeverity || 'none'}`;
+      // Simplified grouping key without threat severity to reduce groups
+      // Only include essential visual properties that affect rendering
+      const groupKey = `${color}-${selectionOpacity}-${binnedSize}-${shouldHighlight}`;
 
       if (!groups.has(groupKey)) {
         groups.set(groupKey, {
           nodes: [],
           color,
           opacity: selectionOpacity,
-          size,
+          size: binnedSize,
           highlighted: shouldHighlight
         });
       }
@@ -248,217 +384,15 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
       groups.get(groupKey)!.nodes.push(node);
     });
 
-    return Array.from(groups.values());
+    // Sort groups by size (largest first) for better batching performance
+    const sortedGroups = Array.from(groups.values()).sort(
+      (a, b) => b.nodes.length - a.nodes.length
+    );
+
+    return sortedGroups;
   }, [nodes, actives, selections, draggingIds, hasSelections, theme]);
 
-  // Enhanced raycasting for individual node interactions
-  const intersect = useCallback(
-    (raycaster: Raycaster): InternalGraphNode | null => {
-      if (!raycaster.camera || nodePositions.size === 0) {
-        return null;
-      }
-
-      // Manual sphere intersection testing for better accuracy
-      const cameraPosition = raycaster.ray.origin;
-      const rayDirection = raycaster.ray.direction;
-
-      let closestNode: InternalGraphNode | null = null;
-      let closestDistance = Infinity;
-
-      for (const [nodeId, position] of nodePositions) {
-        const node = nodes.find(n => n.id === nodeId);
-        if (!node) continue;
-
-        // Calculate distance from ray to sphere center
-        const sphereCenter = new Vector3(position.x, position.y, position.z);
-        const toSphere = sphereCenter.clone().sub(cameraPosition);
-        const projectionLength = toSphere.dot(rayDirection);
-
-        // Skip if sphere is behind the camera
-        if (projectionLength < 0) continue;
-
-        const closestPointOnRay = cameraPosition
-          .clone()
-          .add(rayDirection.clone().multiplyScalar(projectionLength));
-        const distanceToRay = sphereCenter.distanceTo(closestPointOnRay);
-
-        // Check if ray intersects sphere
-        const sphereRadius = position.size;
-        if (
-          distanceToRay <= sphereRadius &&
-          projectionLength < closestDistance
-        ) {
-          closestDistance = projectionLength;
-          closestNode = node;
-        }
-      }
-
-      return closestNode;
-    },
-    [nodes, nodePositions]
-  );
-
-  useFrame(state => {
-    if (disabled) return;
-
-    const intersectedNode = intersect(state.raycaster);
-    const currentHoveredId = hoveredNodeRef.current;
-    const newHoveredId = intersectedNode?.id || null;
-
-    // Update hover state for cursor management
-    setIsHovered(!!newHoveredId);
-
-    // Handle hover state changes
-    if (currentHoveredId !== newHoveredId) {
-      // Handle pointer out for previously hovered node
-      if (currentHoveredId) {
-        const prevNode = nodes.find(n => n.id === currentHoveredId);
-        if (prevNode && onPointerOut) {
-          // Create a mock event for compatibility
-          const mockEvent = {
-            nativeEvent: new PointerEvent('pointerout'),
-            intersections: [],
-            object: { userData: { nodeId: currentHoveredId } }
-          } as any;
-          onPointerOut(prevNode, mockEvent);
-        }
-        setHoveredNodeId(null);
-      }
-
-      // Handle pointer over for newly hovered node
-      if (newHoveredId && intersectedNode) {
-        if (onPointerOver) {
-          // Create a mock event for compatibility
-          const mockEvent = {
-            nativeEvent: new PointerEvent('pointerover'),
-            intersections: [],
-            object: { userData: { nodeId: newHoveredId } }
-          } as any;
-          onPointerOver(intersectedNode, mockEvent);
-        }
-        setHoveredNodeId(newHoveredId);
-      }
-
-      hoveredNodeRef.current = newHoveredId;
-    }
-  });
-
-  // Click handler for instances
-  const handleClick = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (disabled || !onClick) return;
-
-      event.stopPropagation();
-      const intersectedNode = intersect(raycaster);
-
-      if (intersectedNode) {
-        onClick(intersectedNode, undefined, event);
-      }
-    },
-    [disabled, onClick, intersect, raycaster]
-  );
-
-  // Double click handler
-  const handleDoubleClick = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (disabled || !onDoubleClick) return;
-
-      event.stopPropagation();
-      const intersectedNode = intersect(raycaster);
-
-      if (intersectedNode) {
-        onDoubleClick(intersectedNode, event);
-      }
-    },
-    [disabled, onDoubleClick, intersect, raycaster]
-  );
-
-  // Context menu handler
-  const handleContextMenu = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (disabled || !onContextMenu) return;
-
-      event.stopPropagation();
-      const intersectedNode = intersect(raycaster);
-
-      if (intersectedNode) {
-        onContextMenu(intersectedNode);
-      }
-    },
-    [disabled, onContextMenu, intersect, raycaster]
-  );
-
-  // Get the currently dragged node and its cluster for bounds checking
-  const draggedNode = draggedNodeId
-    ? nodes.find(n => n.id === draggedNodeId)
-    : null;
-  const draggedNodeCluster = draggedNode
-    ? clusters.get(draggedNode.cluster)
-    : undefined;
-
-  // useDrag integration for instanced nodes
-  const bind = useDrag({
-    draggable: draggable && isDraggingCurrent,
-    position: draggedNode?.position || {
-      x: 0,
-      y: 0,
-      z: 0,
-      id: '',
-      data: {},
-      links: [],
-      index: 0,
-      vx: 0,
-      vy: 0
-    },
-    bounds: constrainDragging ? draggedNodeCluster?.position : undefined,
-    set: pos => {
-      if (draggedNodeId && draggedNode) {
-        // Update the position while preserving other properties
-        const updatedPosition = {
-          ...draggedNode.position,
-          x: pos.x,
-          y: pos.y,
-          z: pos.z
-        };
-        setNodePosition(draggedNodeId, updatedPosition);
-      }
-    },
-    onDragStart: () => {
-      if (draggedNodeId) {
-        addDraggingId(draggedNodeId);
-      }
-    },
-    onDragEnd: () => {
-      if (draggedNodeId) {
-        const node = nodes.find(n => n.id === draggedNodeId);
-        removeDraggingId(draggedNodeId);
-        if (node) onDragged?.(node);
-        setDraggedNodeId(null);
-      }
-    }
-  });
-
-  // Pointer down handler to initiate dragging
-  const handlePointerDown = useCallback(
-    (event: ThreeEvent<PointerEvent>) => {
-      if (!draggable || disabled) return;
-
-      event.stopPropagation();
-      const intersectedNode = intersect(raycaster);
-
-      if (intersectedNode && !isDraggingCurrent) {
-        setDraggedNodeId(intersectedNode.id);
-      }
-    },
-    [draggable, disabled, intersect, raycaster, isDraggingCurrent]
-  );
-
-  // Cursor management
-  useCursor(isHovered && !isDragging && onClick !== undefined, 'pointer');
-  useCursor(
-    isHovered && draggable && !isDraggingCurrent && onClick === undefined,
-    'grab'
-  );
+  // Global cursor management for drag states
   useCursor(isDraggingCurrent, 'grabbing');
 
   return (
@@ -469,14 +403,8 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
         return (
           <Instances
             key={`${groupIndex}-${group.color}-${group.size}`}
-            ref={instancesRef}
             limit={group.nodes.length}
             range={group.nodes.length}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
-            onContextMenu={handleContextMenu}
-            onPointerDown={handlePointerDown}
-            {...(isDraggingCurrent ? bind() : {})}
           >
             <sphereGeometry args={[1, 25, 25]} />
             <a.meshPhongMaterial
@@ -501,11 +429,27 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
                   : [0, 0, 0];
 
               return (
-                <Instance
+                <DraggableInstance
                   key={node.id}
+                  node={node}
                   position={position as [number, number, number]}
-                  scale={[group.size, group.size, group.size]}
-                  userData={{ nodeId: node.id, type: 'node' }}
+                  size={group.size}
+                  draggable={draggable}
+                  disabled={disabled}
+                  constrainDragging={constrainDragging}
+                  clusters={clusters}
+                  draggedNodeId={draggedNodeId}
+                  setDraggedNodeId={setDraggedNodeId}
+                  onClick={onClick}
+                  onDoubleClick={onDoubleClick}
+                  onContextMenu={onContextMenu}
+                  onPointerOver={onPointerOver}
+                  onPointerOut={onPointerOut}
+                  onDragged={onDragged}
+                  setHoveredNodeId={setHoveredNodeId}
+                  setNodePosition={setNodePosition}
+                  addDraggingId={addDraggingId}
+                  removeDraggingId={removeDraggingId}
                 />
               );
             })}

@@ -86,6 +86,7 @@ export const SmallGraph_Instanced: Story = {
     layoutType: 'forceDirected2d',
     draggable: true,
     useInstancedNodes: true,
+    useInstancedEdges: true,
     animated: true
   }
 };
@@ -113,6 +114,7 @@ export const MediumGraph_Instanced: Story = {
     layoutType: 'forceDirected2d',
     draggable: true,
     useInstancedNodes: true,
+    useInstancedEdges: true,
     animated: true
   }
 };
@@ -140,6 +142,7 @@ export const LargeGraph_Instanced: Story = {
     layoutType: 'forceDirected2d',
     draggable: true,
     useInstancedNodes: true,
+    useInstancedEdges: true,
     animated: true
   }
 };
@@ -168,6 +171,7 @@ export const VeryLargeGraph: Story = {
     layoutType: 'forceDirected2d',
     draggable: true,
     useInstancedNodes: true,
+    useInstancedEdges: true,
     animated: false // Disabled for performance
   }
 };
@@ -187,6 +191,7 @@ export const PerformanceMonitoring: Story = {
           layoutType="forceDirected2d"
           draggable={true}
           useInstancedNodes={true}
+          useInstancedEdges={true}
           animated={true}
         />
         <div 
@@ -207,8 +212,38 @@ export const PerformanceMonitoring: Story = {
           <div>🔗 Edges: {graph.edges.length}</div>
           <div>⚡ Draw Calls: Significantly Reduced</div>
           <div>💾 Memory: Optimized</div>
+          <div>🎯 Edge Segments: High Performance</div>
         </div>
       </div>
     );
+  }
+};
+
+// Edge-specific performance comparison
+const edgeHeavyGraph = generateLargeGraph(300, 1200); // More edges than nodes
+
+export const EdgePerformance_Traditional: Story = {
+  name: 'Edge Heavy Graph (1200 edges) - Traditional Rendering',
+  args: {
+    nodes: edgeHeavyGraph.nodes,
+    edges: edgeHeavyGraph.edges,
+    layoutType: 'forceDirected2d',
+    draggable: true,
+    useInstancedNodes: false,
+    useInstancedEdges: false,
+    animated: false
+  }
+};
+
+export const EdgePerformance_Instanced: Story = {
+  name: 'Edge Heavy Graph (1200 edges) - Segments Rendering',
+  args: {
+    nodes: edgeHeavyGraph.nodes,
+    edges: edgeHeavyGraph.edges,
+    layoutType: 'forceDirected2d',
+    draggable: true,
+    useInstancedNodes: true,
+    useInstancedEdges: true,
+    animated: false
   }
 };

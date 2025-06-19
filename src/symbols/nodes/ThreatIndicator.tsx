@@ -1,8 +1,6 @@
 import React, { FC, useMemo, useRef } from 'react';
-import { useSpring, a } from '@react-spring/three';
 import { useFrame } from '@react-three/fiber';
-import { Color, DoubleSide } from 'three';
-import { animationConfig } from '../../utils/animation';
+import { Color, DoubleSide, Mesh, MeshPhongMaterial } from 'three';
 
 export interface ThreatIndicatorProps {
   /**
@@ -47,7 +45,7 @@ export const ThreatIndicator: FC<ThreatIndicatorProps> = ({
   pulseIntensity = 1.2,
   pulseSpeed = 1.0
 }) => {
-  const meshRef = useRef<any>(null);
+  const meshRef = useRef<Mesh<any, MeshPhongMaterial>>(null);
   const timeRef = useRef(0);
 
   // Color mapping for severity levels
@@ -66,54 +64,50 @@ export const ThreatIndicator: FC<ThreatIndicatorProps> = ({
     [severity, severityColors]
   );
 
-  // Spring animation for entrance
-  const { scale, opacity } = useSpring({
-    from: {
-      scale: [0.1, 0.1, 0.1],
-      opacity: 0
-    },
-    to: {
-      scale: [size * 1.8, size * 1.8, 0.1],
-      opacity: 0.3
-    },
-    config: {
-      ...animationConfig,
-      duration: animated ? 500 : 0
-    }
-  });
-
   // Pulsing animation frame
   useFrame((state, delta) => {
     if (!animated || !meshRef.current) return;
 
     timeRef.current += delta * pulseSpeed;
 
-    // Create pulsing effect
-    const pulse = Math.sin(timeRef.current * 3) * 0.5 + 0.5;
-    const pulsedScale = size * (1.8 + pulse * (pulseIntensity - 1));
-    const pulsedOpacity = 0.2 + pulse * 0.3;
+    // Create pulsing effect with different frequencies for different severities
+    const frequency = severity === 'critical' ? 4 : 2.5;
+    const pulse = Math.sin(timeRef.current * frequency) * 0.5 + 0.5;
 
+    // Scale pulsing
+    const baseScale = size * 1.5;
+    const pulsedScale = baseScale * (1 + pulse * (pulseIntensity - 1) * 0.3);
     meshRef.current.scale.set(pulsedScale, pulsedScale, 0.1);
+
+    // Opacity pulsing
+    const baseopacity = 0.4;
+    const pulsedOpacity = baseopacity * (0.3 + pulse * 0.7);
     meshRef.current.material.opacity = pulsedOpacity;
 
-    // Add emissive intensity for glow effect
-    meshRef.current.material.emissiveIntensity = 0.2 + pulse * 0.4;
+    // Emissive intensity for glow effect
+    meshRef.current.material.emissiveIntensity = 0.1 + pulse * 0.6;
   });
+
+  const baseScale = animated ? size * 1.5 : size * 1.5;
 
   return (
     <group position={position}>
-      <a.mesh ref={meshRef} scale={scale as any} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[size * 1.2, size * 1.8, 32]} />
-        <a.meshPhongMaterial
+      <mesh
+        ref={meshRef}
+        scale={[baseScale, baseScale, 0.1]}
+        rotation={[Math.PI / 2, 0, 0]}
+      >
+        <ringGeometry args={[size * 1.0, size * 1.4, 32]} />
+        <meshPhongMaterial
           side={DoubleSide}
           transparent={true}
-          opacity={opacity}
+          opacity={0.4}
           color={color}
           emissive={color}
           emissiveIntensity={0.3}
           depthWrite={false}
         />
-      </a.mesh>
+      </mesh>
     </group>
   );
 };

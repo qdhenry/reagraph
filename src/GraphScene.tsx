@@ -31,7 +31,7 @@ import type {
 } from './CameraControls/useCenterGraph';
 import { Cluster } from './symbols/Cluster';
 import { Edge } from './symbols/Edge';
-import { Edges } from './symbols/edges';
+import { Edges, InstancedEdges } from './symbols/edges';
 import { Node } from './symbols';
 import { Nodes } from './symbols/nodes';
 import { useCenterGraph } from './CameraControls/useCenterGraph';
@@ -298,6 +298,18 @@ export interface GraphSceneProps {
   showLabels?: boolean;
 
   /**
+   * Force the use of instanced edge rendering regardless of edge count.
+   * When undefined, auto-switches at 200+ edges threshold.
+   */
+  useInstancedEdges?: boolean;
+
+  /**
+   * Threshold for auto-switching to instanced edge rendering.
+   * Default: 200 edges.
+   */
+  instancedEdgeThreshold?: number;
+
+  /**
    * Whether to show icons on instanced nodes.
    * Default: true.
    */
@@ -381,6 +393,8 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
         enableInstancing,
         showLabels = true,
         showIcons = true,
+        useInstancedEdges,
+        instancedEdgeThreshold = 200,
         ...rest
       },
       ref
@@ -487,29 +501,32 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
         ]
       );
 
-      const edgeComponents = useMemo(
-        () =>
-          animated ? (
-            edges.map(e => (
-              <Edge
-                key={e.id}
-                id={e.id}
-                disabled={disabled}
-                animated={animated}
-                labelFontUrl={labelFontUrl}
-                labelPlacement={edgeLabelPosition}
-                arrowPlacement={edgeArrowPosition}
-                interpolation={edgeInterpolation}
-                contextMenu={contextMenu}
-                onClick={onEdgeClick}
-                onContextMenu={onEdgeContextMenu}
-                onPointerOver={onEdgePointerOver}
-                onPointerOut={onEdgePointerOut}
-              />
-            ))
-          ) : (
-            <Edges
+      // Determine if we should use instanced edge rendering
+      const shouldUseInstancedEdges =
+        useInstancedEdges !== undefined
+          ? useInstancedEdges
+          : edges.length >= instancedEdgeThreshold;
+
+      const edgeComponents = useMemo(() => {
+        // Use InstancedEdges for better performance with large graphs
+        if (shouldUseInstancedEdges && !animated) {
+          return (
+            <InstancedEdges
               edges={edges}
+              disabled={disabled}
+              animated={animated}
+              lineWidth={1.0}
+              limit={edges.length}
+            />
+          );
+        }
+
+        // Fallback to original logic for smaller graphs or when animated
+        return animated ? (
+          edges.map(e => (
+            <Edge
+              key={e.id}
+              id={e.id}
               disabled={disabled}
               animated={animated}
               labelFontUrl={labelFontUrl}
@@ -522,22 +539,38 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
               onPointerOver={onEdgePointerOver}
               onPointerOut={onEdgePointerOut}
             />
-          ),
-        [
-          animated,
-          contextMenu,
-          disabled,
-          edgeArrowPosition,
-          edgeInterpolation,
-          edgeLabelPosition,
-          edges,
-          labelFontUrl,
-          onEdgeClick,
-          onEdgeContextMenu,
-          onEdgePointerOut,
-          onEdgePointerOver
-        ]
-      );
+          ))
+        ) : (
+          <Edges
+            edges={edges}
+            disabled={disabled}
+            animated={animated}
+            labelFontUrl={labelFontUrl}
+            labelPlacement={edgeLabelPosition}
+            arrowPlacement={edgeArrowPosition}
+            interpolation={edgeInterpolation}
+            contextMenu={contextMenu}
+            onClick={onEdgeClick}
+            onContextMenu={onEdgeContextMenu}
+            onPointerOver={onEdgePointerOver}
+            onPointerOut={onEdgePointerOut}
+          />
+        );
+      }, [
+        shouldUseInstancedEdges,
+        animated,
+        contextMenu,
+        disabled,
+        edgeArrowPosition,
+        edgeInterpolation,
+        edgeLabelPosition,
+        edges,
+        labelFontUrl,
+        onEdgeClick,
+        onEdgeContextMenu,
+        onEdgePointerOut,
+        onEdgePointerOver
+      ]);
 
       const clusterComponents = useMemo(
         () =>
