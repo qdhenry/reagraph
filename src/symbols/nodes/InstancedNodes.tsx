@@ -10,7 +10,7 @@ import {
   Object3D,
   ColorRepresentation
 } from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 
 import { useStore } from '../../store';
@@ -25,6 +25,10 @@ import { useCameraControls } from '../../CameraControls/useCameraControls';
 import { useDrag } from '../../utils/useDrag';
 import { useHoverIntent } from '../../utils/useHoverIntent';
 import { Ring } from '../Ring';
+import { Label } from '../Label';
+import { Icon } from './Icon';
+import { ThreatIndicator } from './ThreatIndicator';
+import { useSpring } from '@react-spring/three';
 
 export interface InstancedNodesProps {
   /**
@@ -61,6 +65,16 @@ export interface InstancedNodesProps {
    * The context menu for the node.
    */
   contextMenu?: (event: ContextMenuEvent) => React.ReactNode;
+
+  /**
+   * Whether to show labels on nodes.
+   */
+  showLabels?: boolean;
+
+  /**
+   * Whether to show icons on nodes.
+   */
+  showIcons?: boolean;
 
   /**
    * Event handlers
@@ -106,6 +120,8 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
   labelFontUrl,
   renderNode,
   contextMenu,
+  showLabels = true,
+  showIcons = true,
   onPointerOver,
   onPointerOut,
   onClick,
@@ -133,6 +149,40 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
 
   const instancesRef = useRef<any>(null);
   const isDragging = draggingIds.length > 0;
+  const hoveredNodeRef = useRef<string | null>(null);
+  const { raycaster } = useThree();
+
+  // Helper function to get icon URL from iconName
+  const getIconUrl = useCallback((iconName: string) => {
+    const iconMap: Record<string, string> = {
+      java: '/docs/assets/computer.svg',
+      dotnet: '/docs/assets/product.svg',
+      go: '/docs/assets/demon.svg',
+      python: '/docs/assets/fire.svg',
+      default: '/docs/assets/user.svg'
+    };
+    return iconMap[iconName] || iconMap.default;
+  }, []);
+
+  // Track node positions for raycasting
+  const nodePositions = useMemo(() => {
+    const positions = new Map<
+      string,
+      { x: number; y: number; z: number; size: number }
+    >();
+    nodes.forEach(node => {
+      if (node.position) {
+        const size = node.size || 7;
+        positions.set(node.id, {
+          x: node.position.x,
+          y: node.position.y,
+          z: node.position.z,
+          size
+        });
+      }
+    });
+    return positions;
+  }, [nodes]);
 
   // Group nodes by visual state for efficient rendering
   const nodeGroups = useMemo((): NodeInstanceGroup[] => {
@@ -151,14 +201,27 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
           : theme.node.inactiveOpacity
         : theme.node.opacity;
 
-      const color = shouldHighlight
+      // Use threat severity color if available, otherwise use theme color
+      const threatSeverity = node.data?.severity;
+      let color = shouldHighlight
         ? theme.node.activeFill
         : node.fill || theme.node.fill;
 
+      // Override with threat severity colors
+      if (threatSeverity && !shouldHighlight) {
+        const threatColors: Record<string, string> = {
+          critical: '#DC2626',
+          high: '#EA580C',
+          medium: '#D97706',
+          low: '#65A30D'
+        };
+        color = threatColors[threatSeverity] || color;
+      }
+
       const size = node.size || 7;
 
-      // Create a unique key for grouping similar visual states
-      const groupKey = `${color}-${selectionOpacity}-${size}-${shouldHighlight}`;
+      // Include threat severity in grouping key for animation purposes
+      const groupKey = `${color}-${selectionOpacity}-${size}-${shouldHighlight}-${threatSeverity || 'none'}`;
 
       if (!groups.has(groupKey)) {
         groups.set(groupKey, {
@@ -176,41 +239,139 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
     return Array.from(groups.values());
   }, [nodes, actives, selections, draggingIds, hasSelections, theme]);
 
-  // Handle raycasting for individual node interactions
+  // Enhanced raycasting for individual node interactions
   const intersect = useCallback(
     (raycaster: Raycaster): InternalGraphNode | null => {
-      if (!instancesRef.current || !raycaster.camera) {
+      if (!raycaster.camera || nodePositions.size === 0) {
         return null;
       }
 
-      // For now, we'll need to implement custom raycasting logic
-      // This is a simplified version - in production we'd want more sophisticated intersection testing
-      const intersections = raycaster.intersectObject(
-        instancesRef.current,
-        true
-      );
+      // Manual sphere intersection testing for better accuracy
+      const cameraPosition = raycaster.ray.origin;
+      const rayDirection = raycaster.ray.direction;
 
-      if (intersections.length > 0) {
-        const intersection = intersections[0];
-        // Extract node ID from userData or instance index
-        const nodeId = intersection.object.userData?.nodeId;
-        if (nodeId) {
-          return nodes.find(n => n.id === nodeId) || null;
+      let closestNode: InternalGraphNode | null = null;
+      let closestDistance = Infinity;
+
+      for (const [nodeId, position] of nodePositions) {
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node) continue;
+
+        // Calculate distance from ray to sphere center
+        const sphereCenter = new Vector3(position.x, position.y, position.z);
+        const toSphere = sphereCenter.clone().sub(cameraPosition);
+        const projectionLength = toSphere.dot(rayDirection);
+
+        // Skip if sphere is behind the camera
+        if (projectionLength < 0) continue;
+
+        const closestPointOnRay = cameraPosition
+          .clone()
+          .add(rayDirection.clone().multiplyScalar(projectionLength));
+        const distanceToRay = sphereCenter.distanceTo(closestPointOnRay);
+
+        // Check if ray intersects sphere
+        const sphereRadius = position.size;
+        if (
+          distanceToRay <= sphereRadius &&
+          projectionLength < closestDistance
+        ) {
+          closestDistance = projectionLength;
+          closestNode = node;
         }
       }
 
-      return null;
+      return closestNode;
     },
-    [nodes]
+    [nodes, nodePositions]
   );
 
   useFrame(state => {
     if (disabled) return;
 
     const intersectedNode = intersect(state.raycaster);
-    // Handle interactions here - this is a simplified version
-    // In production, we'd want more sophisticated event handling
+    const currentHoveredId = hoveredNodeRef.current;
+    const newHoveredId = intersectedNode?.id || null;
+
+    // Handle hover state changes
+    if (currentHoveredId !== newHoveredId) {
+      // Handle pointer out for previously hovered node
+      if (currentHoveredId) {
+        const prevNode = nodes.find(n => n.id === currentHoveredId);
+        if (prevNode && onPointerOut) {
+          // Create a mock event for compatibility
+          const mockEvent = {
+            nativeEvent: new PointerEvent('pointerout'),
+            intersections: [],
+            object: { userData: { nodeId: currentHoveredId } }
+          } as any;
+          onPointerOut(prevNode, mockEvent);
+        }
+        setHoveredNodeId(null);
+      }
+
+      // Handle pointer over for newly hovered node
+      if (newHoveredId && intersectedNode) {
+        if (onPointerOver) {
+          // Create a mock event for compatibility
+          const mockEvent = {
+            nativeEvent: new PointerEvent('pointerover'),
+            intersections: [],
+            object: { userData: { nodeId: newHoveredId } }
+          } as any;
+          onPointerOver(intersectedNode, mockEvent);
+        }
+        setHoveredNodeId(newHoveredId);
+      }
+
+      hoveredNodeRef.current = newHoveredId;
+    }
   });
+
+  // Click handler for instances
+  const handleClick = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onClick) return;
+
+      event.stopPropagation();
+      const intersectedNode = intersect(raycaster);
+
+      if (intersectedNode) {
+        onClick(intersectedNode, undefined, event);
+      }
+    },
+    [disabled, onClick, intersect, raycaster]
+  );
+
+  // Double click handler
+  const handleDoubleClick = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onDoubleClick) return;
+
+      event.stopPropagation();
+      const intersectedNode = intersect(raycaster);
+
+      if (intersectedNode) {
+        onDoubleClick(intersectedNode, event);
+      }
+    },
+    [disabled, onDoubleClick, intersect, raycaster]
+  );
+
+  // Context menu handler
+  const handleContextMenu = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      if (disabled || !onContextMenu) return;
+
+      event.stopPropagation();
+      const intersectedNode = intersect(raycaster);
+
+      if (intersectedNode) {
+        onContextMenu(intersectedNode);
+      }
+    },
+    [disabled, onContextMenu, intersect, raycaster]
+  );
 
   return (
     <group>
@@ -223,6 +384,9 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
             ref={instancesRef}
             limit={group.nodes.length}
             range={group.nodes.length}
+            onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
+            onContextMenu={handleContextMenu}
           >
             <sphereGeometry args={[1, 25, 25]} />
             <a.meshPhongMaterial
@@ -285,6 +449,100 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
           </group>
         );
       })}
+
+      {/* Threat severity indicators - pulsing rings for critical/high threats */}
+      {nodes.map(node => {
+        const threatSeverity = node.data?.severity;
+        if (
+          !node.position ||
+          !threatSeverity ||
+          (threatSeverity !== 'critical' && threatSeverity !== 'high')
+        ) {
+          return null;
+        }
+
+        const size = node.size || 7;
+        const position = [
+          node.position.x,
+          node.position.y,
+          node.position.z - 0.5
+        ];
+
+        const pulseIntensity = threatSeverity === 'critical' ? 1.5 : 1.2;
+        const pulseSpeed = threatSeverity === 'critical' ? 2 : 1.5;
+
+        return (
+          <ThreatIndicator
+            key={`threat-${node.id}`}
+            position={position as [number, number, number]}
+            size={size}
+            severity={threatSeverity}
+            animated={animated}
+            pulseIntensity={pulseIntensity}
+            pulseSpeed={pulseSpeed}
+          />
+        );
+      })}
+
+      {/* Labels - render separately for all nodes when enabled */}
+      {showLabels &&
+        nodes.map(node => {
+          if (!node.position || !node.label) return null;
+
+          const size = node.size || 7;
+          const position = [
+            node.position.x,
+            node.position.y,
+            node.position.z + size + 5
+          ];
+
+          return (
+            <group
+              key={`label-${node.id}`}
+              position={position as [number, number, number]}
+            >
+              <Label
+                text={node.label}
+                fontUrl={labelFontUrl}
+                color={theme.node.label?.color}
+                opacity={1}
+                fontSize={Math.max(3, size * 0.5)}
+              />
+            </group>
+          );
+        })}
+
+      {/* Icons - render separately for all nodes when enabled */}
+      {showIcons &&
+        nodes.map(node => {
+          if (!node.position || !node.data?.iconName) return null;
+
+          const size = node.size || 7;
+          const position = [
+            node.position.x,
+            node.position.y,
+            node.position.z + 0.5
+          ];
+
+          return (
+            <group
+              key={`icon-${node.id}`}
+              position={position as [number, number, number]}
+            >
+              <Icon
+                id={node.id}
+                image={getIconUrl(node.data.iconName)}
+                size={size * 1.5}
+                opacity={0.9}
+                animated={animated}
+                color="#FFFFFF"
+                node={node}
+                active={false}
+                selected={false}
+              />
+            </group>
+          );
+        })}
     </group>
   );
 };

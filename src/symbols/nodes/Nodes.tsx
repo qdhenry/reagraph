@@ -43,6 +43,8 @@ export const Nodes: FC<NodesProps> = ({
   labelFontUrl,
   renderNode,
   contextMenu,
+  showLabels = true,
+  showIcons = true,
   onPointerOver,
   onPointerOut,
   onClick,
@@ -105,6 +107,8 @@ export const Nodes: FC<NodesProps> = ({
       labelFontUrl={labelFontUrl}
       renderNode={renderNode}
       contextMenu={contextMenu}
+      showLabels={showLabels}
+      showIcons={showIcons}
       onPointerOver={onPointerOver}
       onPointerOut={onPointerOut}
       onClick={onClick}

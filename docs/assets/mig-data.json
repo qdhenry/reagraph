@@ -852,10 +852,7 @@
         "type": "sub-processor",
         "readable_id": "connect.mirthcorp.com-sub-processor",
         "endpoint_ids": []
-    }
-]
-
-const edges = [
+    },
     {
         "id": "107a5dcc-3585-aaa8-14e1-681078123908-aaefafe3-1f7e-5477-9995-5ed9c38a41e3",
         "tags": [],
@@ -1613,10 +1610,7 @@ const edges = [
         "targetDataIds": [
             "a3c8cac6-772f-7cb5-964f-d76332a5e5ab"
         ]
-    }
-]
-
-const vulnerabilites = [
+    },
     {
         "cveName": "CVE-2024-13176",
         "id": "2cceb950-08aa-95a7-ceba-e75a90909c86",

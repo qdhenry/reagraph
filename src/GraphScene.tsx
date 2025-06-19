@@ -290,6 +290,18 @@ export interface GraphSceneProps {
    * Default: true.
    */
   enableInstancing?: boolean;
+
+  /**
+   * Whether to show labels on instanced nodes.
+   * Default: true.
+   */
+  showLabels?: boolean;
+
+  /**
+   * Whether to show icons on instanced nodes.
+   * Default: true.
+   */
+  showIcons?: boolean;
 }
 
 export interface GraphSceneRef {
@@ -367,6 +379,8 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
         useInstancedNodes,
         instancedThreshold,
         enableInstancing,
+        showLabels = true,
+        showIcons = true,
         ...rest
       },
       ref
@@ -434,6 +448,8 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
             useInstancedNodes={useInstancedNodes}
             instancedThreshold={instancedThreshold}
             enableInstancing={enableInstancing}
+            showLabels={showLabels}
+            showIcons={showIcons}
             labelFontUrl={labelFontUrl}
             draggable={draggable}
             constrainDragging={constrainDragging}
@@ -453,6 +469,8 @@ export const GraphScene: FC<GraphSceneProps & { ref?: Ref<GraphSceneRef> }> =
           useInstancedNodes,
           instancedThreshold,
           enableInstancing,
+          showLabels,
+          showIcons,
           constrainDragging,
           animated,
           contextMenu,
