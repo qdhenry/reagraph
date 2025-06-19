@@ -1,6 +1,13 @@
-import React, { FC, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, {
+  FC,
+  useMemo,
+  useRef,
+  useCallback,
+  useEffect,
+  useState
+} from 'react';
 import { a } from '@react-spring/three';
-import { Instances, Instance } from '@react-three/drei';
+import { Instances, Instance, useCursor } from '@react-three/drei';
 import {
   DoubleSide,
   Color,
@@ -152,6 +159,11 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
   const hoveredNodeRef = useRef<string | null>(null);
   const { raycaster } = useThree();
 
+  // Drag state management for instanced nodes
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const isDraggingCurrent = draggedNodeId !== null;
+
   // Helper function to get icon URL from iconName
   const getIconUrl = useCallback((iconName: string) => {
     const iconMap: Record<string, string> = {
@@ -293,6 +305,9 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
     const currentHoveredId = hoveredNodeRef.current;
     const newHoveredId = intersectedNode?.id || null;
 
+    // Update hover state for cursor management
+    setIsHovered(!!newHoveredId);
+
     // Handle hover state changes
     if (currentHoveredId !== newHoveredId) {
       // Handle pointer out for previously hovered node
@@ -373,6 +388,79 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
     [disabled, onContextMenu, intersect, raycaster]
   );
 
+  // Get the currently dragged node and its cluster for bounds checking
+  const draggedNode = draggedNodeId
+    ? nodes.find(n => n.id === draggedNodeId)
+    : null;
+  const draggedNodeCluster = draggedNode
+    ? clusters.get(draggedNode.cluster)
+    : undefined;
+
+  // useDrag integration for instanced nodes
+  const bind = useDrag({
+    draggable: draggable && isDraggingCurrent,
+    position: draggedNode?.position || {
+      x: 0,
+      y: 0,
+      z: 0,
+      id: '',
+      data: {},
+      links: [],
+      index: 0,
+      vx: 0,
+      vy: 0
+    },
+    bounds: constrainDragging ? draggedNodeCluster?.position : undefined,
+    set: pos => {
+      if (draggedNodeId && draggedNode) {
+        // Update the position while preserving other properties
+        const updatedPosition = {
+          ...draggedNode.position,
+          x: pos.x,
+          y: pos.y,
+          z: pos.z
+        };
+        setNodePosition(draggedNodeId, updatedPosition);
+      }
+    },
+    onDragStart: () => {
+      if (draggedNodeId) {
+        addDraggingId(draggedNodeId);
+      }
+    },
+    onDragEnd: () => {
+      if (draggedNodeId) {
+        const node = nodes.find(n => n.id === draggedNodeId);
+        removeDraggingId(draggedNodeId);
+        if (node) onDragged?.(node);
+        setDraggedNodeId(null);
+      }
+    }
+  });
+
+  // Pointer down handler to initiate dragging
+  const handlePointerDown = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      if (!draggable || disabled) return;
+
+      event.stopPropagation();
+      const intersectedNode = intersect(raycaster);
+
+      if (intersectedNode && !isDraggingCurrent) {
+        setDraggedNodeId(intersectedNode.id);
+      }
+    },
+    [draggable, disabled, intersect, raycaster, isDraggingCurrent]
+  );
+
+  // Cursor management
+  useCursor(isHovered && !isDragging && onClick !== undefined, 'pointer');
+  useCursor(
+    isHovered && draggable && !isDraggingCurrent && onClick === undefined,
+    'grab'
+  );
+  useCursor(isDraggingCurrent, 'grabbing');
+
   return (
     <group>
       {nodeGroups.map((group, groupIndex) => {
@@ -387,6 +475,8 @@ export const InstancedNodes: FC<InstancedNodesProps> = ({
             onClick={handleClick}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
+            onPointerDown={handlePointerDown}
+            {...(isDraggingCurrent ? bind() : {})}
           >
             <sphereGeometry args={[1, 25, 25]} />
             <a.meshPhongMaterial
